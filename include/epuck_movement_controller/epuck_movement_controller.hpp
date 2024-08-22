@@ -32,7 +32,7 @@ class EpuckMovementController : public rclcpp::Node {
         rclcpp_action::CancelResponse handleCancel(const std::shared_ptr<rclcpp_action::ServerGoalHandle<epuck_driver_interfaces::action::SimpleMovement>>  goal_handle);
         void handleAccepted(const std::shared_ptr<rclcpp_action::ServerGoalHandle<epuck_driver_interfaces::action::SimpleMovement>>  goal_handle);
         void execute_movement(const std::shared_ptr<rclcpp_action::ServerGoalHandle<epuck_driver_interfaces::action::SimpleMovement>>  goal_handle);
-        void odomCB(nav_msgs::msg::Odometry::ConstSharedPtr const &data);
+        void odomCB(const std::shared_ptr<const nav_msgs::msg::Odometry> data);
 
         //helper
         tf2::Quaternion msgToQuat(geometry_msgs::msg::Pose const &pose);

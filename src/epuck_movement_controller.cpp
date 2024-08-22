@@ -21,7 +21,7 @@ EpuckMovementController::~EpuckMovementController()  {
     return;
 }
 
-void EpuckMovementController::odomCB(nav_msgs::msg::Odometry::ConstSharedPtr const &data) {
+void EpuckMovementController::odomCB(const std::shared_ptr<const nav_msgs::msg::Odometry> data) {
     current_pose_ = data->pose.pose;
     return;
 }
@@ -74,7 +74,7 @@ void EpuckMovementController::execute_movement(const std::shared_ptr<rclcpp_acti
                 break;
             }
         }
-        sleep(1); //sleeping one second for the robot to stop
+        //rclcpp::Duration(1).sleep(); //sleeping one second for the robot to stop
     } 
     if(goal->distance > 0 && !goal_handle -> is_canceling()) {
         // driving straight
