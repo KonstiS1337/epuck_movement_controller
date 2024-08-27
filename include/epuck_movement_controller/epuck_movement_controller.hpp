@@ -12,8 +12,8 @@
 
 #define TURN_SPEED 250 // steps per min
 #define DRIVE_SPEED 500 // steps per min
-#define ANGLE_TOLERANCE 0.1 // difference to goal angle in rad
-#define DISTANCE_TOLERANCE 1 // difference to goal distance in cm
+#define ANGLE_TOLERANCE 0.001 // difference to goal angle in rad
+#define DISTANCE_TOLERANCE 0.005 // difference to goal distance in cm
 
 class EpuckMovementController : public rclcpp::Node {
     public:
@@ -25,6 +25,7 @@ class EpuckMovementController : public rclcpp::Node {
         geometry_msgs::msg::Pose current_pose_;
         rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
         rclcpp::Client<epuck_driver_interfaces::srv::ChangeRobotState>::SharedPtr robot_control_srv_;
+        std::shared_ptr<rclcpp::Rate> update_rate_;
 
         rclcpp_action::Server<epuck_driver_interfaces::action::SimpleMovement>::SharedPtr action_server_;
         

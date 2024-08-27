@@ -10,6 +10,8 @@ EpuckMovementController::EpuckMovementController() : rclcpp::Node("epuck_movemen
                         std::bind(&EpuckMovementController::handleAccepted,this,std::placeholders::_1),
                         rcl_action_server_get_default_options());
     
+    update_rate_=std::make_shared<rclcpp::Rate>(10.0);
+
     std::string epuck_name = this->get_parameter("epuck_name").as_string();
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(epuck_name + "/odom",1,std::bind(&EpuckMovementController::odomCB,this,std::placeholders::_1));
     robot_control_srv_ = this->create_client<epuck_driver_interfaces::srv::ChangeRobotState>(epuck_name + "/robot_control");
@@ -23,6 +25,7 @@ EpuckMovementController::~EpuckMovementController()  {
 
 void EpuckMovementController::odomCB(const std::shared_ptr<const nav_msgs::msg::Odometry> data) {
     current_pose_ = data->pose.pose;
+    //RCLCPP_INFO(this->get_logger(),"Odom data updated %f with x %f and y %f",data->header.stamp.nanosec,current_pose_.position.x,current_pose_.position.y);
     return;
 }
 
@@ -36,6 +39,7 @@ rclcpp_action::GoalResponse EpuckMovementController::handleGoal(const rclcpp_act
 
 rclcpp_action::CancelResponse EpuckMovementController::handleCancel(const std::shared_ptr<rclcpp_action::ServerGoalHandle<epuck_driver_interfaces::action::SimpleMovement>>  goal_handle) {
     RCLCPP_INFO(this->get_logger(),"Received cancel call.");
+    goal_running_ = false;
     return rclcpp_action::CancelResponse::ACCEPT;
 }
 
@@ -46,36 +50,43 @@ void EpuckMovementController::handleAccepted(const std::shared_ptr<rclcpp_action
 }
 
 void EpuckMovementController::execute_movement(const std::shared_ptr<rclcpp_action::ServerGoalHandle<epuck_driver_interfaces::action::SimpleMovement>>  goal_handle) {
+    RCLCPP_INFO(this->get_logger(),"Executing goal.");
     auto goal = goal_handle->get_goal();
     auto request_left = std::make_shared<epuck_driver_interfaces::srv::ChangeRobotState::Request>();
     auto request_right = std::make_shared<epuck_driver_interfaces::srv::ChangeRobotState::Request>();
+    request_left->module = request_left->MODULE_LEFT_MOTOR;
+    request_right->module = request_right->MODULE_RIGHT_MOTOR;
     //adjusting angle
     if(goal->angle) { //requested angle is != 0
         tf2::Quaternion turn_quat,current_quat,final_quat;
-        turn_quat.setRPY(0,0,goal->angle);
+        turn_quat.setRPY(0,0,goal->angle); //goal->angle
+        RCLCPP_INFO(this->get_logger(),"turn w is %f with z %f",turn_quat.getW(),turn_quat.getZ());
         current_quat = msgToQuat(current_pose_);
-        
         final_quat = turn_quat * current_quat;
+        
 
-        request_left->module = request_left->MODULE_LEFT_MOTOR;
-        request_right->module = request_right->MODULE_RIGHT_MOTOR;
         request_left->value = goal->angle > 0 ? TURN_SPEED : - TURN_SPEED;
         request_right->value = goal->angle < 0 ? TURN_SPEED : - TURN_SPEED;
         robot_control_srv_->async_send_request(request_left);
         robot_control_srv_->async_send_request(request_right);
 
+        RCLCPP_INFO(this->get_logger(),"Final quat with w %f, x %f, y %f, z %f",final_quat.getW(),final_quat.getX(),final_quat.getY(),final_quat.getZ());
         while(!goal_handle->is_canceling() && rclcpp::ok()) {
-            tf2::Quaternion error = final_quat * current_quat.inverse();
-            if(abs(1 - error.getW()) < ANGLE_TOLERANCE) {
+            current_quat = msgToQuat(current_pose_);
+            tf2::Quaternion error = current_quat.inverse() * final_quat;
+
+            RCLCPP_INFO(this->get_logger(),"Error is %f",abs(1 - abs(error.getW())));
+            if(abs(1 - abs(error.getW())) < ANGLE_TOLERANCE) {
                 request_left->value  = 0;
                 request_right->value  = 0;
                 robot_control_srv_->async_send_request(request_left);
                 robot_control_srv_->async_send_request(request_right);
                 break;
             }
+            update_rate_->sleep(); //sleeping one second for the robot to stop
         }
-        //rclcpp::Duration(1).sleep(); //sleeping one second for the robot to stop
     } 
+    RCLCPP_INFO(this->get_logger(),"Passed angle.");
     if(goal->distance > 0 && !goal_handle -> is_canceling()) {
         // driving straight
         geometry_msgs::msg::Pose starting_pose = current_pose_;
@@ -84,14 +95,23 @@ void EpuckMovementController::execute_movement(const std::shared_ptr<rclcpp_acti
         request_right->value = DRIVE_SPEED;
         robot_control_srv_->async_send_request(request_left);
         robot_control_srv_->async_send_request(request_right);
+        RCLCPP_INFO(this->get_logger(),"Sending speed.");
 
         while(!goal_handle->is_canceling() && rclcpp::ok()) {
-            if(sqrt(pow(current_pose_.position.x - starting_pose.position.x,2) + pow(current_pose_.position.y - starting_pose.position.y,2)) < DISTANCE_TOLERANCE) {
+            float sum1 = pow(current_pose_.position.x - starting_pose.position.x,2);
+            float sum2 = pow(current_pose_.position.y - starting_pose.position.y,2);
+            float value = sqrt(sum1 + sum2);
+            //RCLCPP_INFO(this->get_logger(),"Calculated value %f.",value);
+            //RCLCPP_INFO(this->get_logger(),"Current pose: %f , %f and starting: %f , %f",current_pose_.position.x,current_pose_.position.y,starting_pose.position.x,starting_pose.position.y);
+            if( value >= goal->distance) {
+                RCLCPP_INFO(this->get_logger(),"Stopping robot.");
                 request_left->value  = 0;
                 request_right->value  = 0;
                 robot_control_srv_->async_send_request(request_left);
                 robot_control_srv_->async_send_request(request_right);
+                break;
             }
+            update_rate_->sleep(); //sleeping one second for the robot to stop
         }
     } 
     //stopping the robot
@@ -110,7 +130,7 @@ void EpuckMovementController::execute_movement(const std::shared_ptr<rclcpp_acti
         res->success = true;
         goal_handle->succeed(res);
     }
-    
+    goal_running_ = false;
     return;
 }
 
@@ -120,7 +140,6 @@ tf2::Quaternion EpuckMovementController::msgToQuat(geometry_msgs::msg::Pose cons
     out.setX(pose.orientation.x);
     out.setY(pose.orientation.y);
     out.setZ(pose.orientation.z);
-
     return out;
 }
 
@@ -132,3 +151,4 @@ int main(int argc,char *argv[]) {
     
    return 0;
 }
+
