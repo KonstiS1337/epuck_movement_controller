@@ -13,8 +13,12 @@ EpuckMovementController::EpuckMovementController() : rclcpp::Node("epuck_movemen
     update_rate_=std::make_shared<rclcpp::Rate>(10.0);
 
     std::string epuck_name = this->get_parameter("epuck_name").as_string();
+
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(epuck_name + "/odom",1,std::bind(&EpuckMovementController::odomCB,this,std::placeholders::_1));
+    tof_sub_ = this->create_subscription<std_msgs::msg::Int16>(epuck_name + "/tof",1,std::bind(&EpuckMovementController::tofCB,this,std::placeholders::_1));
+
     robot_control_srv_ = this->create_client<epuck_driver_interfaces::srv::ChangeRobotState>(epuck_name + "/robot_control");
+    
     return;
 }
 
@@ -28,6 +32,12 @@ void EpuckMovementController::odomCB(const std::shared_ptr<const nav_msgs::msg::
     //RCLCPP_INFO(this->get_logger(),"Odom data updated %f with x %f and y %f",data->header.stamp.nanosec,current_pose_.position.x,current_pose_.position.y);
     return;
 }
+
+void EpuckMovementController::tofCB(const std::shared_ptr<const std_msgs::msg::Int16> data) {
+    current_tof_ = data->data;
+    return;
+}
+
 
 rclcpp_action::GoalResponse EpuckMovementController::handleGoal(const rclcpp_action::GoalUUID & uuid,std::shared_ptr<const epuck_driver_interfaces::action::SimpleMovement::Goal> goal) {
     if(goal_running_) {
@@ -45,12 +55,13 @@ rclcpp_action::CancelResponse EpuckMovementController::handleCancel(const std::s
 
 void EpuckMovementController::handleAccepted(const std::shared_ptr<rclcpp_action::ServerGoalHandle<epuck_driver_interfaces::action::SimpleMovement>>  goal_handle){
     goal_running_ = true;
-    std::thread{std::bind(&EpuckMovementController::execute_movement, this, std::placeholders::_1), goal_handle}.detach();
+    if(goal_handle->get_goal()->tof_approach) std::thread{std::bind(&EpuckMovementController::executeTofApproach, this, std::placeholders::_1), goal_handle}.detach();
+    else std::thread{std::bind(&EpuckMovementController::executeMovement, this, std::placeholders::_1), goal_handle}.detach();
     return;
 }
 
-void EpuckMovementController::execute_movement(const std::shared_ptr<rclcpp_action::ServerGoalHandle<epuck_driver_interfaces::action::SimpleMovement>>  goal_handle) {
-    RCLCPP_INFO(this->get_logger(),"Executing goal.");
+void EpuckMovementController::executeMovement(const std::shared_ptr<rclcpp_action::ServerGoalHandle<epuck_driver_interfaces::action::SimpleMovement>>  goal_handle) {
+    RCLCPP_INFO(this->get_logger(),"Executing drive goal.");
     auto goal = goal_handle->get_goal();
     auto request_left = std::make_shared<epuck_driver_interfaces::srv::ChangeRobotState::Request>();
     auto request_right = std::make_shared<epuck_driver_interfaces::srv::ChangeRobotState::Request>();
@@ -114,6 +125,49 @@ void EpuckMovementController::execute_movement(const std::shared_ptr<rclcpp_acti
             update_rate_->sleep(); //sleeping one second for the robot to stop
         }
     } 
+    //stopping the robot
+    request_left->value  = 0;
+    request_right->value  = 0;
+    robot_control_srv_->async_send_request(request_left);
+    robot_control_srv_->async_send_request(request_right);
+
+    auto res = std::make_shared<epuck_driver_interfaces::action::SimpleMovement::Result>();
+
+    if(goal_handle->is_canceling()) {
+        res->success = false;
+        goal_handle->canceled(res);
+    }
+    else {
+        res->success = true;
+        goal_handle->succeed(res);
+    }
+    goal_running_ = false;
+    return;
+}
+
+void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_action::ServerGoalHandle<epuck_driver_interfaces::action::SimpleMovement>>  goal_handle) {
+    RCLCPP_INFO(this->get_logger(),"Executing tof goal.");
+    auto goal = goal_handle->get_goal();
+    auto request_left = std::make_shared<epuck_driver_interfaces::srv::ChangeRobotState::Request>();
+    auto request_right = std::make_shared<epuck_driver_interfaces::srv::ChangeRobotState::Request>();
+    request_left->module = request_left->MODULE_LEFT_MOTOR;
+    request_right->module = request_right->MODULE_RIGHT_MOTOR;
+    request_left->value = DRIVE_SPEED;
+    request_right->value = DRIVE_SPEED;
+    robot_control_srv_->async_send_request(request_left);
+    robot_control_srv_->async_send_request(request_right);
+
+    while(!goal_handle->is_canceling() && rclcpp::ok()) {
+        if(current_tof_ <= goal->distance * 1000) { //converting m to mm
+            request_left->value = 0;
+            request_right->value = 0;
+            robot_control_srv_->async_send_request(request_left);
+            robot_control_srv_->async_send_request(request_right);
+            break;
+        }
+        update_rate_->sleep();
+    } 
+
     //stopping the robot
     request_left->value  = 0;
     request_right->value  = 0;
