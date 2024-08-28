@@ -2,9 +2,10 @@
 
 EpuckMovementController::EpuckMovementController() : rclcpp::Node("epuck_movement_controller_node"){
     this->declare_parameter<std::string>("epuck_name","epuck"); // set the correct name of epuck here
+    std::string epuck_name = this->get_parameter("epuck_name").as_string();
     action_server_ = rclcpp_action::create_server<epuck_driver_interfaces::action::SimpleMovement>(
                         this,
-                        "~/movement_goal",
+                        epuck_name + "/movement_goal",
                         std::bind(&EpuckMovementController::handleGoal,this,std::placeholders::_1,std::placeholders::_2),
                         std::bind(&EpuckMovementController::handleCancel,this,std::placeholders::_1),
                         std::bind(&EpuckMovementController::handleAccepted,this,std::placeholders::_1),
@@ -12,7 +13,6 @@ EpuckMovementController::EpuckMovementController() : rclcpp::Node("epuck_movemen
     
     update_rate_=std::make_shared<rclcpp::Rate>(10.0);
 
-    std::string epuck_name = this->get_parameter("epuck_name").as_string();
 
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(epuck_name + "/odom",1,std::bind(&EpuckMovementController::odomCB,this,std::placeholders::_1));
     tof_sub_ = this->create_subscription<std_msgs::msg::Int16>(epuck_name + "/tof",1,std::bind(&EpuckMovementController::tofCB,this,std::placeholders::_1));
@@ -156,14 +156,24 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
     request_right->value = DRIVE_SPEED;
     robot_control_srv_->async_send_request(request_left);
     robot_control_srv_->async_send_request(request_right);
+    bool slow_mode_active = false;
 
     while(!goal_handle->is_canceling() && rclcpp::ok()) {
-        if(current_tof_ <= goal->distance * 1000) { //converting m to mm
+        if(current_tof_ - TOF_LAG_DISTANCE <= goal->distance * 1000) { //converting m to mm
+            RCLCPP_INFO(this->get_logger(),"Reached limit with %i",current_tof_);
             request_left->value = 0;
             request_right->value = 0;
             robot_control_srv_->async_send_request(request_left);
             robot_control_srv_->async_send_request(request_right);
             break;
+        }
+        if(!slow_mode_active && current_tof_ - TOF_LAG_DISTANCE <= goal->distance * 1000 + 30) {
+            RCLCPP_INFO(this->get_logger(),"Entering slow movement");
+            request_left->value = DRIVE_SPEED*0.5;
+            request_right->value = DRIVE_SPEED*0.5;
+            robot_control_srv_->async_send_request(request_left);
+            robot_control_srv_->async_send_request(request_right);
+            slow_mode_active = true;
         }
         update_rate_->sleep();
     } 

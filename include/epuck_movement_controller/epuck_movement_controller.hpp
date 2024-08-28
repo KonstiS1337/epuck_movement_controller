@@ -16,6 +16,7 @@
 #define DRIVE_SPEED 500 // steps per min
 #define ANGLE_TOLERANCE 0.001 // difference to goal angle in rad
 #define DISTANCE_TOLERANCE 0.005 // difference to goal distance in cm
+#define TOF_LAG_DISTANCE 10 // sensor tolerance due to input lag in mm
 
 class EpuckMovementController : public rclcpp::Node {
     public:
