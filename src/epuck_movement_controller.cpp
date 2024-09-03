@@ -158,6 +158,9 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
     robot_control_srv_->async_send_request(request_right);
     bool slow_mode_active = false;
 
+    int initial_tof = current_tof_;
+
+
     while(!goal_handle->is_canceling() && rclcpp::ok()) {
         if(current_tof_ - TOF_LAG_DISTANCE <= goal->distance * 1000) { //converting m to mm
             RCLCPP_INFO(this->get_logger(),"Reached limit with %i",current_tof_);
@@ -184,7 +187,11 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
     robot_control_srv_->async_send_request(request_left);
     robot_control_srv_->async_send_request(request_right);
 
+    int final_tof = current_tof_;
+
     auto res = std::make_shared<epuck_driver_interfaces::action::SimpleMovement::Result>();
+    res->distance_driven = ((float)(final_tof - initial_tof))/1000.0
+
 
     if(goal_handle->is_canceling()) {
         res->success = false;
@@ -194,6 +201,8 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
         res->success = true;
         goal_handle->succeed(res);
     }
+
+    //Compute result
     goal_running_ = false;
     return;
 }
