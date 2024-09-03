@@ -190,7 +190,7 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
     int final_tof = current_tof_;
 
     auto res = std::make_shared<epuck_driver_interfaces::action::SimpleMovement::Result>();
-    res->distance_driven = ((float)(final_tof - initial_tof))/1000.0
+    res->distance_driven = ((float)(final_tof - initial_tof))/1000.0;
 
 
     if(goal_handle->is_canceling()) {
