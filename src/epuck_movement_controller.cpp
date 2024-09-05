@@ -76,8 +76,8 @@ void EpuckMovementController::executeMovement(const std::shared_ptr<rclcpp_actio
         final_quat = turn_quat * current_quat;
         
 
-        request_left->value = goal->angle > 0 ? TURN_SPEED : - TURN_SPEED;
-        request_right->value = goal->angle < 0 ? TURN_SPEED : - TURN_SPEED;
+        request_right->value = goal->angle > 0 ? TURN_SPEED : - TURN_SPEED;
+        request_left->value = goal->angle < 0 ? TURN_SPEED : - TURN_SPEED;
         robot_control_srv_->async_send_request(request_left);
         robot_control_srv_->async_send_request(request_right);
 
@@ -132,16 +132,20 @@ void EpuckMovementController::executeMovement(const std::shared_ptr<rclcpp_actio
     robot_control_srv_->async_send_request(request_right);
 
     auto res = std::make_shared<epuck_driver_interfaces::action::SimpleMovement::Result>();
-
+    RCLCPP_INFO(this->get_logger(),"Stopped robot - creating result");
     if(goal_handle->is_canceling()) {
         res->success = false;
         goal_handle->canceled(res);
     }
     else {
         res->success = true;
+        res->distance_driven = 0.0;
         goal_handle->succeed(res);
+        RCLCPP_INFO(this->get_logger(),"Set goal handle to true");
     }
     goal_running_ = false;
+
+    RCLCPP_INFO(this->get_logger(),"Exit");
     return;
 }
 
@@ -157,9 +161,6 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
     robot_control_srv_->async_send_request(request_left);
     robot_control_srv_->async_send_request(request_right);
     bool slow_mode_active = false;
-
-    int initial_tof = current_tof_;
-
 
     while(!goal_handle->is_canceling() && rclcpp::ok()) {
         if(current_tof_ - TOF_LAG_DISTANCE <= goal->distance * 1000) { //converting m to mm
@@ -187,11 +188,7 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
     robot_control_srv_->async_send_request(request_left);
     robot_control_srv_->async_send_request(request_right);
 
-    int final_tof = current_tof_;
-
     auto res = std::make_shared<epuck_driver_interfaces::action::SimpleMovement::Result>();
-    res->distance_driven = std::abs(((float)(final_tof - initial_tof))/1000.0);
-
 
     if(goal_handle->is_canceling()) {
         res->success = false;
@@ -201,8 +198,6 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
         res->success = true;
         goal_handle->succeed(res);
     }
-
-    //Compute result
     goal_running_ = false;
     return;
 }
