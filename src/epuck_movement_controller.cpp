@@ -156,14 +156,21 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
     auto request_right = std::make_shared<epuck_driver_interfaces::srv::ChangeRobotState::Request>();
     request_left->module = request_left->MODULE_LEFT_MOTOR;
     request_right->module = request_right->MODULE_RIGHT_MOTOR;
-    request_left->value = DRIVE_SPEED;
-    request_right->value = DRIVE_SPEED;
+    // determine if we need to go backwards or forward
+    if(current_tof_ - (goal->distance * 1000) < 0) { // we drive backwards
+        request_left->value = -DRIVE_SPEED;
+        request_right->value = -DRIVE_SPEED;
+    }
+    else {
+        request_left->value = DRIVE_SPEED;
+        request_right->value = DRIVE_SPEED;
+    }
     robot_control_srv_->async_send_request(request_left);
     robot_control_srv_->async_send_request(request_right);
     bool slow_mode_active = false;
 
     while(!goal_handle->is_canceling() && rclcpp::ok()) {
-        if(current_tof_ - TOF_LAG_DISTANCE <= goal->distance * 1000) { //converting m to mm
+        if(std::abs(current_tof_ - TOF_LAG_DISTANCE - goal->distance * 1000) < TOF_APPROACH_TOLERANCE) { //converting m to mm
             RCLCPP_INFO(this->get_logger(),"Reached limit with %i",current_tof_);
             request_left->value = 0;
             request_right->value = 0;
@@ -171,10 +178,10 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
             robot_control_srv_->async_send_request(request_right);
             break;
         }
-        if(!slow_mode_active && current_tof_ - TOF_LAG_DISTANCE <= goal->distance * 1000 + 30) {
+        if(!slow_mode_active && std::abs(current_tof_ - TOF_LAG_DISTANCE - goal->distance * 1000) < TOF_APPROACH_TOLERANCE + 30) {
             RCLCPP_INFO(this->get_logger(),"Entering slow movement");
-            request_left->value = DRIVE_SPEED*0.5;
-            request_right->value = DRIVE_SPEED*0.5;
+            request_left->value *= 0.5;
+            request_right->value *= 0.5;
             robot_control_srv_->async_send_request(request_left);
             robot_control_srv_->async_send_request(request_right);
             slow_mode_active = true;
