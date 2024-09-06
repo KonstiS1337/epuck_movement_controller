@@ -67,6 +67,9 @@ void EpuckMovementController::executeMovement(const std::shared_ptr<rclcpp_actio
     auto request_right = std::make_shared<epuck_driver_interfaces::srv::ChangeRobotState::Request>();
     request_left->module = request_left->MODULE_LEFT_MOTOR;
     request_right->module = request_right->MODULE_RIGHT_MOTOR;
+    int local_drive_speed = !goal->drive_speed ? DRIVE_SPEED : goal->drive_speed;
+    int local_angle_speed = !goal->angle_speed ? TURN_SPEED : goal->angle_speed;
+
     //adjusting angle
     if(goal->angle) { //requested angle is != 0
         tf2::Quaternion turn_quat,current_quat,final_quat;
@@ -76,17 +79,15 @@ void EpuckMovementController::executeMovement(const std::shared_ptr<rclcpp_actio
         final_quat = turn_quat * current_quat;
         
 
-        request_right->value = goal->angle > 0 ? TURN_SPEED : - TURN_SPEED;
-        request_left->value = goal->angle < 0 ? TURN_SPEED : - TURN_SPEED;
+        request_right->value = goal->angle > 0 ? local_angle_speed : - local_angle_speed;
+        request_left->value = goal->angle < 0 ? local_angle_speed : - local_angle_speed;
         robot_control_srv_->async_send_request(request_left);
         robot_control_srv_->async_send_request(request_right);
 
-        RCLCPP_INFO(this->get_logger(),"Final quat with w %f, x %f, y %f, z %f",final_quat.getW(),final_quat.getX(),final_quat.getY(),final_quat.getZ());
         while(!goal_handle->is_canceling() && rclcpp::ok()) {
             current_quat = msgToQuat(current_pose_);
             tf2::Quaternion error = current_quat.inverse() * final_quat;
 
-            RCLCPP_INFO(this->get_logger(),"Error is %f",abs(1 - abs(error.getW())));
             if(abs(1 - abs(error.getW())) < ANGLE_TOLERANCE) {
                 request_left->value  = 0;
                 request_right->value  = 0;
@@ -102,11 +103,10 @@ void EpuckMovementController::executeMovement(const std::shared_ptr<rclcpp_actio
         // driving straight
         geometry_msgs::msg::Pose starting_pose = current_pose_;
 
-        request_left->value = DRIVE_SPEED;
-        request_right->value = DRIVE_SPEED;
+        request_left->value = local_drive_speed;
+        request_right->value = local_drive_speed;
         robot_control_srv_->async_send_request(request_left);
         robot_control_srv_->async_send_request(request_right);
-        RCLCPP_INFO(this->get_logger(),"Sending speed.");
 
         while(!goal_handle->is_canceling() && rclcpp::ok()) {
             float sum1 = pow(current_pose_.position.x - starting_pose.position.x,2);
@@ -156,14 +156,15 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
     auto request_right = std::make_shared<epuck_driver_interfaces::srv::ChangeRobotState::Request>();
     request_left->module = request_left->MODULE_LEFT_MOTOR;
     request_right->module = request_right->MODULE_RIGHT_MOTOR;
+    int local_drive_speed = !goal->drive_speed ? DRIVE_SPEED : goal->drive_speed;
     // determine if we need to go backwards or forward
     if(current_tof_ - (goal->distance * 1000) < 0) { // we drive backwards
-        request_left->value = -DRIVE_SPEED;
-        request_right->value = -DRIVE_SPEED;
+        request_left->value = -local_drive_speed;
+        request_right->value = -local_drive_speed;
     }
     else {
-        request_left->value = DRIVE_SPEED;
-        request_right->value = DRIVE_SPEED;
+        request_left->value = local_drive_speed;
+        request_right->value = local_drive_speed;
     }
     robot_control_srv_->async_send_request(request_left);
     robot_control_srv_->async_send_request(request_right);
