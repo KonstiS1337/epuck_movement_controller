@@ -24,7 +24,7 @@ EpuckMovementController::EpuckMovementController() : rclcpp::Node("epuck_movemen
     pid_p_srv_ = this->create_service<std_srvs::srv::SetBool>(epuck_name + "/pid/set_p",std::bind(&EpuckMovementController::srvCBp,this,std::placeholders::_1,std::placeholders::_2));
     pid_i_srv_ = this->create_service<std_srvs::srv::SetBool>(epuck_name + "/pid/set_i",std::bind(&EpuckMovementController::srvCBi,this,std::placeholders::_1,std::placeholders::_2));
     pid_d_srv_ = this->create_service<std_srvs::srv::SetBool>(epuck_name + "/pid/set_d",std::bind(&EpuckMovementController::srvCBd,this,std::placeholders::_1,std::placeholders::_2));
-
+    pid_output_pub_ = this->create_publisher<std_msgs::msg::Float32>(epuck_name + "/pid/output",1);
     // setting up pidsetTarget
     pid_ = std::make_shared<PIDController<float>>(1,0,0,
     [this]() {
@@ -229,6 +229,9 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
 
     while(!goal_handle->is_canceling() && rclcpp::ok()) {   
         pid_->tick(); 
+        std_msgs::msg::Float32 msg;
+        msg.data = pid_output_;
+        pid_output_pub_->publish(msg);
         if(std::abs(pid_output_) <  PID_GOAL_TOLERANCE) {
             RCLCPP_INFO(this->get_logger(),"Reached limit with %i",current_tof_);
             request_left->value = 0;
@@ -237,14 +240,14 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
             robot_control_srv_->async_send_request(request_right);
             break;
         }
-        int turn_speed =((std::abs(pid_output_) > 100.0 ? 100 : std::abs(pid_output_))  / 100.0) * 0.1 * TURN_SPEED ;    
+        int turn_speed =((std::abs(pid_output_) > 100.0 ? 100 : std::abs(pid_output_))  / 100.0) * 0.5 * TURN_SPEED ;    
         if(pid_output_ >= 0) {
-            request_left->value = turn_speed;
-            request_right->value = turn_speed;
-        }
-        else {
             request_left->value = -turn_speed;
             request_right->value = -turn_speed;
+        }
+        else {
+            request_left->value = turn_speed;
+            request_right->value = turn_speed;
         }
         robot_control_srv_->async_send_request(request_left);
         robot_control_srv_->async_send_request(request_right);

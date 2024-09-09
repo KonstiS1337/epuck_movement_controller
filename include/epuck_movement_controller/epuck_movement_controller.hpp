@@ -14,6 +14,7 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <std_srvs/srv/set_bool.hpp>
+#include <std_msgs/msg/float32.hpp>
 
 #define TURN_SPEED 250 // steps per min
 #define DRIVE_SPEED 500 // steps per min
@@ -39,6 +40,7 @@ class EpuckMovementController : public rclcpp::Node {
         rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
         rclcpp::Subscription<std_msgs::msg::Int16>::SharedPtr tof_sub_;
         rclcpp::Publisher<std_msgs::msg::Int16>::SharedPtr clean_tof_pub_;
+        rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr pid_output_pub_;
         rclcpp::Client<epuck_driver_interfaces::srv::ChangeRobotState>::SharedPtr robot_control_srv_;
         rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr pid_p_srv_,pid_i_srv_,pid_d_srv_;
         std::shared_ptr<rclcpp::Rate> update_rate_;
