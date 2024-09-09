@@ -31,7 +31,7 @@ class EpuckMovementController : public rclcpp::Node {
         ~EpuckMovementController();
     private:
         bool goal_running_ = false;
-        float pid_output_;
+        float pid_output_,goal_delta_;
         std::vector<int> tof_accum_;
         std::shared_ptr<PIDController<float>> pid_;
 
