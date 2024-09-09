@@ -93,6 +93,7 @@ void EpuckMovementController::executeMovement(const std::shared_ptr<rclcpp_actio
     request_right->module = request_right->MODULE_RIGHT_MOTOR;
     int local_drive_speed = !goal->drive_speed ? DRIVE_SPEED : goal->drive_speed;
     int local_angle_speed = !goal->angle_speed ? TURN_SPEED : goal->angle_speed;
+    int initial_tof = current_tof_;
 
     //adjusting angle
     if(goal->angle) { //requested angle is != 0
@@ -163,7 +164,8 @@ void EpuckMovementController::executeMovement(const std::shared_ptr<rclcpp_actio
     }
     else {
         res->success = true;
-        res->distance_driven = 0.0;
+        int final_tof = current_tof_;
+        res->distance_driven = std::abs(((float)(final_tof - initial_tof))/1000.0);
         goal_handle->succeed(res);
         RCLCPP_INFO(this->get_logger(),"Set goal handle to true");
     }
