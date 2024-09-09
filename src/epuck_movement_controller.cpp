@@ -39,7 +39,7 @@ void EpuckMovementController::tofCB(const std::shared_ptr<const std_msgs::msg::I
     for(int i = 0; i < TOF_WINDOW - 1; i++) {
         tof_accum_[i] = tof_accum_[i +1];
     }
-    tof_accum_[TOF_WINDOW - 1] = data->data;
+    tof_accum_[TOF_WINDOW - 1   ] = data->data;
     auto median = [] (std::vector<int> vec) -> int{
         // Step 1: Sort the vector
         std::sort(vec.begin(), vec.end());
@@ -198,6 +198,7 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
     bool slow_mode_active = false;
 
     while(!goal_handle->is_canceling() && rclcpp::ok()) {
+        float distance_to_goal = std::abs(current_tof_ - TOF_LAG_DISTANCE - goal->distance * 1000);
         if(std::abs(current_tof_ - TOF_LAG_DISTANCE - goal->distance * 1000) < TOF_APPROACH_TOLERANCE) { //converting m to mm
             RCLCPP_INFO(this->get_logger(),"Reached limit with %i",current_tof_);
             request_left->value = 0;
@@ -206,7 +207,7 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
             robot_control_srv_->async_send_request(request_right);
             break;
         }
-        if(!slow_mode_active && std::abs(current_tof_ - TOF_LAG_DISTANCE - goal->distance * 1000) < TOF_APPROACH_TOLERANCE + 30) {
+        if(!slow_mode_active && std::abs(current_tof_ - TOF_LAG_DISTANCE - goal->distance * 1000) < 50) {
             RCLCPP_INFO(this->get_logger(),"Entering slow movement");
             request_left->value *= 0.5;
             request_right->value *= 0.5;
@@ -214,6 +215,7 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
             robot_control_srv_->async_send_request(request_right);
             slow_mode_active = true;
         }
+        RCLCPP_INFO(this->get_logger(),"Distance to goal is %f",distance_to_goal);
         update_rate_->sleep();
     } 
 
