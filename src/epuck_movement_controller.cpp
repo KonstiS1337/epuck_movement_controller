@@ -225,7 +225,7 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
     request_right->module = request_right->MODULE_RIGHT_MOTOR;
     int initial_tof = current_tof_;
     rclcpp::Rate rate(std::chrono::milliseconds(200));
-    pid_->setTarget(goal->distance);
+    pid_->setTarget(goal->distance * 1000);
 
     while(!goal_handle->is_canceling() && rclcpp::ok()) {  
         pid_->tick(); 
