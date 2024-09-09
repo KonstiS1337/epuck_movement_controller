@@ -16,7 +16,7 @@
 #define DRIVE_SPEED 500 // steps per min
 #define ANGLE_TOLERANCE 0.001 // difference to goal angle in rad
 #define DISTANCE_TOLERANCE 0.005 // difference to goal distance in cm
-#define TOF_LAG_DISTANCE 05 // sensor tolerance due to input lag in mm
+#define TOF_LAG_DISTANCE 0 // sensor tolerance due to input lag in mm
 #define TOF_APPROACH_TOLERANCE 05 // tolerance for tof approach that is okay in mm
 
 class EpuckMovementController : public rclcpp::Node {
@@ -25,11 +25,13 @@ class EpuckMovementController : public rclcpp::Node {
         ~EpuckMovementController();
     private:
         bool goal_running_ = false;
+        std::vector<int> tof_accum_;
 
         geometry_msgs::msg::Pose current_pose_;
         int current_tof_;
         rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
         rclcpp::Subscription<std_msgs::msg::Int16>::SharedPtr tof_sub_;
+        rclcpp::Publisher<std_msgs::msg::Int16>::SharedPtr clean_tof_pub_;
         rclcpp::Client<epuck_driver_interfaces::srv::ChangeRobotState>::SharedPtr robot_control_srv_;
         std::shared_ptr<rclcpp::Rate> update_rate_;
 

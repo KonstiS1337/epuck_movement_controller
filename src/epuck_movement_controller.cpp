@@ -1,6 +1,8 @@
 #include "epuck_movement_controller/epuck_movement_controller.hpp"
 
-EpuckMovementController::EpuckMovementController() : rclcpp::Node("epuck_movement_controller_node"){
+EpuckMovementController::EpuckMovementController() : rclcpp::Node("epuck_movement_controller_node"),
+                                                    tof_accum_({0,0,0,0,0})
+{
     this->declare_parameter<std::string>("epuck_name","epuck"); // set the correct name of epuck here
     std::string epuck_name = this->get_parameter("epuck_name").as_string();
     action_server_ = rclcpp_action::create_server<epuck_driver_interfaces::action::SimpleMovement>(
@@ -13,7 +15,7 @@ EpuckMovementController::EpuckMovementController() : rclcpp::Node("epuck_movemen
     
     update_rate_=std::make_shared<rclcpp::Rate>(10.0);
 
-
+    clean_tof_pub_ = this->create_publisher<std_msgs::msg::Int16>(epuck_name + "/clean_tof",1);
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(epuck_name + "/odom",1,std::bind(&EpuckMovementController::odomCB,this,std::placeholders::_1));
     tof_sub_ = this->create_subscription<std_msgs::msg::Int16>(epuck_name + "/tof",1,std::bind(&EpuckMovementController::tofCB,this,std::placeholders::_1));
 
@@ -34,7 +36,29 @@ void EpuckMovementController::odomCB(const std::shared_ptr<const nav_msgs::msg::
 }
 
 void EpuckMovementController::tofCB(const std::shared_ptr<const std_msgs::msg::Int16> data) {
-    current_tof_ = data->data;
+    for(int i = 0; i < 4; i++) {
+        tof_accum_[i] = tof_accum_[i +1];
+    }
+    tof_accum_[4] = data->data;
+    auto median = [] (std::vector<int> vec) -> int{
+        // Step 1: Sort the vector
+        std::sort(vec.begin(), vec.end());
+
+        // Step 2: Calculate the median
+        size_t n = vec.size();
+        
+        if (n % 2 == 0) {
+            // If even number of elements, return the average of the two middle elements
+            return (vec[n / 2 - 1] + vec[n / 2]) / 2.0;
+        } else {
+            // If odd number of elements, return the middle element
+            return vec[n / 2];
+        }
+    };
+    current_tof_ = median(tof_accum_);
+    std_msgs::msg::Int16 msg;
+    msg.data = current_tof_;
+    clean_tof_pub_->publish(msg);
     return;
 }
 
