@@ -18,6 +18,7 @@
 #define DISTANCE_TOLERANCE 0.005 // difference to goal distance in cm
 #define TOF_LAG_DISTANCE 0 // sensor tolerance due to input lag in mm
 #define TOF_APPROACH_TOLERANCE 05 // tolerance for tof approach that is okay in mm
+#define TOF_WINDOW 10
 
 class EpuckMovementController : public rclcpp::Node {
     public:

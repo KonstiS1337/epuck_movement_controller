@@ -1,7 +1,7 @@
 #include "epuck_movement_controller/epuck_movement_controller.hpp"
 
 EpuckMovementController::EpuckMovementController() : rclcpp::Node("epuck_movement_controller_node"),
-                                                    tof_accum_({0,0,0,0,0})
+                                                    tof_accum_({0,0,0,0,0,0,0,0,0,0})
 {
     this->declare_parameter<std::string>("epuck_name","epuck"); // set the correct name of epuck here
     std::string epuck_name = this->get_parameter("epuck_name").as_string();
@@ -36,10 +36,10 @@ void EpuckMovementController::odomCB(const std::shared_ptr<const nav_msgs::msg::
 }
 
 void EpuckMovementController::tofCB(const std::shared_ptr<const std_msgs::msg::Int16> data) {
-    for(int i = 0; i < 4; i++) {
+    for(int i = 0; i < TOF_WINDOW - 1; i++) {
         tof_accum_[i] = tof_accum_[i +1];
     }
-    tof_accum_[4] = data->data;
+    tof_accum_[TOF_WINDOW - 1] = data->data;
     auto median = [] (std::vector<int> vec) -> int{
         // Step 1: Sort the vector
         std::sort(vec.begin(), vec.end());
@@ -183,6 +183,7 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
     request_left->module = request_left->MODULE_LEFT_MOTOR;
     request_right->module = request_right->MODULE_RIGHT_MOTOR;
     int local_drive_speed = !goal->drive_speed ? DRIVE_SPEED : goal->drive_speed;
+    int initial_tof = current_tof_;
     // determine if we need to go backwards or forward
     if(current_tof_ - (goal->distance * 1000) < 0) { // we drive backwards
         request_left->value = -local_drive_speed;
@@ -230,6 +231,8 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
     }
     else {
         res->success = true;
+        int final_tof = current_tof_;
+        res->distance_driven = std::abs(((float)(final_tof - initial_tof))/1000.0);
         goal_handle->succeed(res);
     }
     goal_running_ = false;
