@@ -28,7 +28,7 @@ EpuckMovementController::EpuckMovementController() : rclcpp::Node("epuck_movemen
     // setting up pidsetTarget
     pid_ = std::make_shared<PIDController<float>>(1,0,0,
     [this]() {
-        return goal_delta_;
+        return current_tof_;
     },
     [this] (float output) {
         pid_output_ = output;
@@ -39,7 +39,6 @@ EpuckMovementController::EpuckMovementController() : rclcpp::Node("epuck_movemen
     return this->pidTimeFunction();
     });
 
-    pid_->setTarget(0);
     pid_->setEnabled(true);
 
     return;
@@ -226,9 +225,9 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
     request_right->module = request_right->MODULE_RIGHT_MOTOR;
     int initial_tof = current_tof_;
     rclcpp::Rate rate(std::chrono::milliseconds(200));
+    pid_->setTarget(goal->distance);
 
     while(!goal_handle->is_canceling() && rclcpp::ok()) {  
-        goal_delta_ = current_tof_ - goal->distance; 
         pid_->tick(); 
         std_msgs::msg::Float32 msg;
         msg.data = pid_output_;
