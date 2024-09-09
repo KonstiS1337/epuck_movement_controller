@@ -240,7 +240,7 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
             robot_control_srv_->async_send_request(request_right);
             break;
         }
-        int turn_speed =((std::abs(pid_output_) > 100.0 ? 100 : std::abs(pid_output_))  / 100.0) * 0.5 * TURN_SPEED ;    
+        int turn_speed =((std::abs(pid_output_) > 100.0 ? 100 : std::abs(pid_output_))  / 100.0)  * TURN_SPEED ;    
         if(pid_output_ >= 0) {
             request_left->value = -turn_speed;
             request_right->value = -turn_speed;
