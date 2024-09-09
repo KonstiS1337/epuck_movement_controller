@@ -12,11 +12,12 @@ find_package(rclcpp_action REQUIRED)
 find_package(epuck_driver_interfaces REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(tf2 REQUIRED)
 
 
 # Building
-add_executable(${PROJECT_NAME}_node src/epuck_movement_controller.cpp)
+add_executable(${PROJECT_NAME}_node src/epuck_movement_controller.cpp src/pid.cpp)
 target_include_directories(${PROJECT_NAME}_node PRIVATE include)
 
 # Installing node
@@ -42,6 +43,7 @@ rclcpp_action
 nav_msgs
 geometry_msgs
 tf2
+std_srvs
 )
 
 ament_package()

@@ -21,8 +21,34 @@ EpuckMovementController::EpuckMovementController() : rclcpp::Node("epuck_movemen
 
     robot_control_srv_ = this->create_client<epuck_driver_interfaces::srv::ChangeRobotState>(epuck_name + "/robot_control");
     
+    pid_p_srv_ = this->create_service<std_srvs::srv::SetBool>(epuck_name + "/pid/set_p",std::bind(&EpuckMovementController::srvCBp,this,std::placeholders::_1,std::placeholders::_2));
+    pid_i_srv_ = this->create_service<std_srvs::srv::SetBool>(epuck_name + "/pid/set_i",std::bind(&EpuckMovementController::srvCBi,this,std::placeholders::_1,std::placeholders::_2));
+    pid_d_srv_ = this->create_service<std_srvs::srv::SetBool>(epuck_name + "/pid/set_d",std::bind(&EpuckMovementController::srvCBd,this,std::placeholders::_1,std::placeholders::_2));
+
+    // setting up pidsetTarget
+    pid_ = std::make_shared<PIDController<float>>(1,0,0,
+    [this]() {
+        return current_tof_;
+    },
+    [this] (float output) {
+        pid_output_ = output;
+        return;
+    });
+
+    pid_->registerTimeFunction([this]() -> unsigned long {
+    return this->pidTimeFunction();
+    });
+
+    pid_->setTarget(0);
+    pid_->setEnabled(true);
+
     return;
 }
+
+unsigned long EpuckMovementController::pidTimeFunction() {
+    return (unsigned long) this->now().nanoseconds() / 1e+6;
+}
+
 
 EpuckMovementController::~EpuckMovementController()  {
     RCLCPP_INFO(this->get_logger(),"Destroying node.");
@@ -32,6 +58,22 @@ EpuckMovementController::~EpuckMovementController()  {
 void EpuckMovementController::odomCB(const std::shared_ptr<const nav_msgs::msg::Odometry> data) {
     current_pose_ = data->pose.pose;
     //RCLCPP_INFO(this->get_logger(),"Odom data updated %f with x %f and y %f",data->header.stamp.nanosec,current_pose_.position.x,current_pose_.position.y);
+    return;
+}
+
+void EpuckMovementController::srvCBp(const std::shared_ptr<std_srvs::srv::SetBool::Request> req, std::shared_ptr<std_srvs::srv::SetBool::Response> resp) {
+    pid_->setP(req->data);
+    resp->success = true;
+    return;
+}
+void EpuckMovementController::srvCBi(const std::shared_ptr<std_srvs::srv::SetBool::Request> req, std::shared_ptr<std_srvs::srv::SetBool::Response> resp){
+    pid_->setI(req->data);
+    resp->success = true;
+    return;
+}
+void EpuckMovementController::srvCBd(const std::shared_ptr<std_srvs::srv::SetBool::Request> req, std::shared_ptr<std_srvs::srv::SetBool::Response> resp){
+    pid_->setD(req->data);
+    resp->success = true;
     return;
 }
 
@@ -182,24 +224,12 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
     auto request_right = std::make_shared<epuck_driver_interfaces::srv::ChangeRobotState::Request>();
     request_left->module = request_left->MODULE_LEFT_MOTOR;
     request_right->module = request_right->MODULE_RIGHT_MOTOR;
-    int local_drive_speed = !goal->drive_speed ? DRIVE_SPEED : goal->drive_speed;
     int initial_tof = current_tof_;
-    // determine if we need to go backwards or forward
-    if(current_tof_ - (goal->distance * 1000) < 0) { // we drive backwards
-        request_left->value = -local_drive_speed;
-        request_right->value = -local_drive_speed;
-    }
-    else {
-        request_left->value = local_drive_speed;
-        request_right->value = local_drive_speed;
-    }
-    robot_control_srv_->async_send_request(request_left);
-    robot_control_srv_->async_send_request(request_right);
-    bool slow_mode_active = false;
+    rclcpp::Rate rate(std::chrono::milliseconds(200));
 
-    while(!goal_handle->is_canceling() && rclcpp::ok()) {
-        float distance_to_goal = std::abs(current_tof_ - TOF_LAG_DISTANCE - goal->distance * 1000);
-        if(std::abs(current_tof_ - TOF_LAG_DISTANCE - goal->distance * 1000) < TOF_APPROACH_TOLERANCE) { //converting m to mm
+    while(!goal_handle->is_canceling() && rclcpp::ok()) {   
+        pid_->tick(); 
+        if(std::abs(pid_output_) <  PID_GOAL_TOLERANCE) {
             RCLCPP_INFO(this->get_logger(),"Reached limit with %i",current_tof_);
             request_left->value = 0;
             request_right->value = 0;
@@ -207,17 +237,56 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
             robot_control_srv_->async_send_request(request_right);
             break;
         }
-        if(!slow_mode_active && std::abs(current_tof_ - TOF_LAG_DISTANCE - goal->distance * 1000) < 50) {
-            RCLCPP_INFO(this->get_logger(),"Entering slow movement");
-            request_left->value *= 0.25;
-            request_right->value *= 0.25;
-            robot_control_srv_->async_send_request(request_left);
-            robot_control_srv_->async_send_request(request_right);
-            slow_mode_active = true;
+        int turn_speed =((std::abs(pid_output_) > 100.0 ? 100 : std::abs(pid_output_))  / 100.0) * 0.1 * TURN_SPEED ;    
+        if(pid_output_ >= 0) {
+            request_left->value = turn_speed;
+            request_right->value = turn_speed;
         }
-        RCLCPP_INFO(this->get_logger(),"Distance to goal is %f",distance_to_goal);
-        update_rate_->sleep();
-    } 
+        else {
+            request_left->value = -turn_speed;
+            request_right->value = -turn_speed;
+        }
+        robot_control_srv_->async_send_request(request_left);
+        robot_control_srv_->async_send_request(request_right);
+        rate.sleep();
+    }
+    
+    // int local_drive_speed = !goal->drive_speed ? DRIVE_SPEED : goal->drive_speed;
+    // int initial_tof = current_tof_;
+    // // determine if we need to go backwards or forward
+    // if(current_tof_ - (goal->distance * 1000) < 0) { // we drive backwards
+    //     request_left->value = -local_drive_speed;
+    //     request_right->value = -local_drive_speed;
+    // }
+    // else {
+    //     request_left->value = local_drive_speed;
+    //     request_right->value = local_drive_speed;
+    // }
+    // robot_control_srv_->async_send_request(request_left);
+    // robot_control_srv_->async_send_request(request_right);
+    // bool slow_mode_active = false;
+
+    // while(!goal_handle->is_canceling() && rclcpp::ok()) {
+    //     float distance_to_goal = std::abs(current_tof_ - TOF_LAG_DISTANCE - goal->distance * 1000);
+    //     if(std::abs(current_tof_ - TOF_LAG_DISTANCE - goal->distance * 1000) < TOF_APPROACH_TOLERANCE) { //converting m to mm
+    //         RCLCPP_INFO(this->get_logger(),"Reached limit with %i",current_tof_);
+    //         request_left->value = 0;
+    //         request_right->value = 0;
+    //         robot_control_srv_->async_send_request(request_left);
+    //         robot_control_srv_->async_send_request(request_right);
+    //         break;
+    //     }
+    //     if(!slow_mode_active && std::abs(current_tof_ - TOF_LAG_DISTANCE - goal->distance * 1000) < 50) {
+    //         RCLCPP_INFO(this->get_logger(),"Entering slow movement");
+    //         request_left->value *= 0.25;
+    //         request_right->value *= 0.25;
+    //         robot_control_srv_->async_send_request(request_left);
+    //         robot_control_srv_->async_send_request(request_right);
+    //         slow_mode_active = true;
+    //     }
+    //     RCLCPP_INFO(this->get_logger(),"Distance to goal is %f",distance_to_goal);
+    //     update_rate_->sleep();
+    // } 
 
     //stopping the robot
     request_left->value  = 0;
