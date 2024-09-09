@@ -1,7 +1,7 @@
 #include "epuck_movement_controller/epuck_movement_controller.hpp"
 
 EpuckMovementController::EpuckMovementController() : rclcpp::Node("epuck_movement_controller_node"),
-                                                    tof_accum_({0,0,0,0,0,0,0,0,0,0})
+                                                    tof_accum_({0,0,0,0,0,0,0})
 {
     this->declare_parameter<std::string>("epuck_name","epuck"); // set the correct name of epuck here
     std::string epuck_name = this->get_parameter("epuck_name").as_string();
@@ -209,8 +209,8 @@ void EpuckMovementController::executeTofApproach(const std::shared_ptr<rclcpp_ac
         }
         if(!slow_mode_active && std::abs(current_tof_ - TOF_LAG_DISTANCE - goal->distance * 1000) < 50) {
             RCLCPP_INFO(this->get_logger(),"Entering slow movement");
-            request_left->value *= 0.5;
-            request_right->value *= 0.5;
+            request_left->value *= 0.25;
+            request_right->value *= 0.25;
             robot_control_srv_->async_send_request(request_left);
             robot_control_srv_->async_send_request(request_right);
             slow_mode_active = true;
